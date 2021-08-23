@@ -2,17 +2,16 @@ window.addEventListener('load', () => {
 	let button = document.getElementById("calibrate-button")
 	const c = () => {
 	  const results = []
-	  const beeps = 3
+	  const beeps = 20
 	  let resultsPending = beeps
-    addResult = (freq, coverage, index) => {
+    addResult = (freq, delta) => {
       const ul = document.getElementById('results') 
       const li = document.createElement('li')
-      li.textContent = `freq: ${freq}, ms coverage=${coverage}, start ms=${index}`
+      li.textContent = `freq: ${freq}, delta=${Math.floor(-1000 * delta)}`
       ul.appendChild(li) 
       results.push({
         freq, 
-        coverage, 
-        index
+        delta 
       })
       resultsPending -= 1
       if(resultsPending == 0) {
@@ -25,12 +24,13 @@ window.addEventListener('load', () => {
 })
 
 function summarize(results) {
-  let indexSum = 0
+  let startSum = 0
   for(result of results) {
-    indexSum += result.index
+    startSum += result.delta
   }
   let div = document.getElementById("summary")
-  div.textContent = `avg start = ${indexSum / results.length}`
+  let ms = -1000 * startSum / results.length
+  div.textContent = `recommended offset = ${ms}`
 }
 
 async function calibrate(beeps, resultCallback) {
@@ -40,12 +40,12 @@ async function calibrate(beeps, resultCallback) {
 	const stream = await initUserMedia()	
 	const mediaRecorder = new MediaRecorder(stream)
 
-  const delay = 0.7
+  let delay = 0.7
   const beepDuration = 0.1
-  const safety = 0.2
+  const safety = 0.1
 
 	for(let i = 0; i < beeps; i++) {
-		const freq = 2500 + i * 200
+		const freq = 1000 + i * 200
 		
     // record
     const source = ac.createOscillator()
@@ -71,20 +71,26 @@ async function calibrate(beeps, resultCallback) {
     playbackNode.connect(beepDetector)
 	  playbackNode.start(0)
 
-    beepDetector.port.onmessage = (f => (
-      event => {
-        console.log(event.data)
-        const result = evaluate(
-          event.data, 
-          beepDuration, 
-          f 
-        )
-        resultCallback(freq, result.coverage, result.index) 
-      })
-    )(freq)
+    const measurementPromise = new Promise((resolve, reject) => {
+      beepDetector.port.onmessage = event => { resolve(event.data) }
+    })
 
 	  await oac.startRendering()
-	  beepDetector.port.postMessage({a: 1})
+	  beepDetector.port.postMessage('')
+	  const measurement = await measurementPromise
+
+    const result = evaluate(
+      measurement, 
+      beepDuration, 
+      freq
+    )
+
+    const start = result.index / 1000
+    const delta = delay - result.index / 1000
+    delay = Math.max(start, (delay + (delay - start))) / 2 + 0.1
+
+    resultCallback(freq, delta)
+
 	} 
 }
 
@@ -144,30 +150,28 @@ function toAudioBuffer(blob, ac) {
 }
 
 function evaluate(freqs, beepDuration, freq) {
-  const oks = freqs.map(f => 
-    (f < freq + 10 && f > freq - 10) ? 1 : 0
-  )
+  const squares = freqs.map(f => Math.pow(f - freq, 2))
 
   const length = Math.floor(beepDuration * 1000)
   let bestIndex = 0
   let value = 0
   for(let i = 0; i < length; i++) {
-    value += oks[i]
+    value += squares[i]
   }
-  let bestValue = value
+  let leastSum = value
   let index = 1
   while(index + length < freqs.length) {
-    value += oks[index + length]
-    value -= oks[index - 1]
-    if(value > bestValue) {
-      bestValue = value
+    value += squares[index + length]
+    value -= squares[index - 1]
+    if(value < leastSum) {
+      leastSum = value
       bestIndex = index
     }
     index += 1
   }
   return {
     index: bestIndex, 
-    coverage: bestValue
+    coverage: leastSum
   }
 }
 

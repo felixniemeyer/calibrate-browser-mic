@@ -12,21 +12,20 @@ class BeepDetector extends AudioWorkletProcessor {
     popStack: [] // initialized in constructor
   }
 
-  avgOver = 5
+  avgOver = 3
   avg = 100
 
   zeroline = 0
-  zerolineDrag = 0.99
+  zerolineDrag = 0
 
   constructor () {
     super()
 
     for(let i = 0; i < this.avgOver; i++) {
-      this.recentZeroCrossingDistances.popStack.push(100)
+      this.recentZeroCrossingDistances.popStack.push(this.avg)
     }
 
     this.port.onmessage = event => {
-      console.log("received message", event.data)
       this.port.postMessage(this.freqPerMs)
     }; 
   }
@@ -71,7 +70,7 @@ class BeepDetector extends AudioWorkletProcessor {
             this.freqPerMs.push(freq) 
             //console.log("freq around 1000?", freq > 990 && freq < 1010) 
           }
-          this.zeroline = this.zeroline * this.zerolineDrag + (1 - this.zerolineDrag) * sample
+          this.zeroline = this.zeroline * (1 - this.zerolineDrag) + this.zerolineDrag * sample
         }
       }
     }
