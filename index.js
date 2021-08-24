@@ -2,7 +2,7 @@ window.addEventListener('load', () => {
 	let button = document.getElementById("calibrate-button")
 	const c = () => {
 	  const results = []
-	  const beeps = 20
+	  const beeps = 7
 	  let resultsPending = beeps
     addResult = (freq, delta) => {
       const ul = document.getElementById('results') 
@@ -28,9 +28,29 @@ function summarize(results) {
   for(result of results) {
     startSum += result.delta
   }
+  let startAvg = startSum / results.length
+
+  let inliersCount = 0
+  let inliersSum = 0
+  console.log(startAvg)
+  for(result of results) {
+    console.log(result)
+    if(result.delta > startAvg - 0.1 && result.delta < startAvg + 0.1) {
+      inliersSum += result.delta
+      inliersCount += 1
+    }
+  }
+
   let div = document.getElementById("summary")
-  let ms = -1000 * startSum / results.length
-  div.textContent = `recommended offset = ${ms}`
+  if(inliersCount > results.length / 2) {
+    console.log(inliersCount)
+    console.log(inliersSum)
+    let recommendation = inliersSum / inliersCount
+    div.textContent += `avg=${- Math.floor(startAvg * 1000)}`
+    div.textContent += ` Recommended offset=${Math.floor(- recommendation * 1000)}`
+  } else {
+    div.textContent = `values vary too much. Try again in a more silent environment`
+  }
 }
 
 async function calibrate(beeps, resultCallback) {
@@ -40,9 +60,9 @@ async function calibrate(beeps, resultCallback) {
 	const stream = await initUserMedia()	
 	const mediaRecorder = new MediaRecorder(stream)
 
-  let delay = 0.7
+  let delay = 1
   const beepDuration = 0.1
-  const safety = 0.1
+  const safety = 1
 
 	for(let i = 0; i < beeps; i++) {
 		const freq = 1000 + i * 200
@@ -78,6 +98,8 @@ async function calibrate(beeps, resultCallback) {
 	  await oac.startRendering()
 	  beepDetector.port.postMessage('')
 	  const measurement = await measurementPromise
+
+	  console.log("m", freq, measurement)
 
     const result = evaluate(
       measurement, 
